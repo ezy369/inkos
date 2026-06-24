@@ -72,6 +72,16 @@ import {
   createShortFictionRunTool,
   createStoryboardCreationTool,
   createSubAgentTool,
+  createDraftStructureTool,
+  createConnectChoiceTool,
+  createRemoveNodeTool,
+  filmLLMDepsFromClient,
+  applyGraphDelta,
+  loadStoryGraph,
+  reviewStoryGraph,
+  generateNodeImage,
+  defaultNodeImageDeps,
+  type NodeImageDeps,
   type ResolvedModel,
   type PipelineConfig,
   type PlayMode,
@@ -234,8 +244,8 @@ function resolveProjectImageFile(root: string, rawPath: string): { readonly reso
   ) {
     throw new ApiError(400, "INVALID_PROJECT_FILE_PATH", "Invalid project file path");
   }
-  if (!relPath.startsWith("shorts/") && !relPath.startsWith("covers/")) {
-    throw new ApiError(400, "INVALID_PROJECT_FILE_PATH", "Only generated shorts/ and covers/ images can be previewed");
+  if (!relPath.startsWith("shorts/") && !relPath.startsWith("covers/") && !relPath.startsWith("interactive-films/")) {
+    throw new ApiError(400, "INVALID_PROJECT_FILE_PATH", "Only generated shorts/, covers/, interactive-films/ images can be previewed");
   }
 
   const ext = relPath.split(".").pop()?.toLowerCase() ?? "";
@@ -761,7 +771,10 @@ function isConfirmedProductionAction(args: {
     || args.requestedIntent === "storyboard_create"
     || args.requestedIntent === "interactive_film_create"
     || args.requestedIntent === "play_start"
-      || args.requestedIntent === "generate_cover"
+    || args.requestedIntent === "generate_cover"
+    || args.requestedIntent === "draft_structure"
+    || args.requestedIntent === "connect_choice"
+    || args.requestedIntent === "remove_node"
     );
 }
 
@@ -782,6 +795,7 @@ async function executeConfirmedProductionAction(args: {
   readonly pipeline: PipelineRunner;
   readonly root: string;
   readonly sessionId: string;
+  readonly bookId: string | null;
   readonly streamSessionId: string;
   readonly instruction: string;
   readonly requestedIntent: RequestedIntent;
@@ -796,7 +810,10 @@ async function executeConfirmedProductionAction(args: {
     | ReturnType<typeof createScriptCreationTool>
     | ReturnType<typeof createStoryboardCreationTool>
     | ReturnType<typeof createInteractiveFilmCreationTool>
-    | ReturnType<typeof createPlayStartTool>;
+    | ReturnType<typeof createPlayStartTool>
+    | ReturnType<typeof createDraftStructureTool>
+    | ReturnType<typeof createConnectChoiceTool>
+    | ReturnType<typeof createRemoveNodeTool>;
   let params: Record<string, unknown>;
   let agent: string | undefined;
 
@@ -919,6 +936,38 @@ async function executeConfirmedProductionAction(args: {
       ...(payload?.mode ? { mode: payload.mode } : {}),
       ...(initialScene ? { initialScene } : {}),
       ...(payload?.suggestedActions ? { suggestedActions: payload.suggestedActions } : {}),
+    };
+  } else if (args.requestedIntent === "draft_structure") {
+    const payload = actionPayload?.draftStructure;
+    const projectId = payload?.projectId ?? args.bookId;
+    if (!projectId) throw new ApiError(400, "INVALID_ID", "interactive-film action requires a project id (bookId)");
+    const agentCtx = args.pipeline.createAgentContext("film-authoring", projectId);
+    const deps = filmLLMDepsFromClient(agentCtx.client, agentCtx.model);
+    tool = createDraftStructureTool(args.root, projectId, deps);
+    params = {
+      instruction: payload?.instruction?.trim() || args.instruction,
+    };
+  } else if (args.requestedIntent === "connect_choice") {
+    const payload = actionPayload?.connectChoice;
+    if (!payload?.node) {
+      throw new ApiError(400, "CONFIRMED_ACTION_PAYLOAD_INCOMPLETE", "确认连接选择缺少节点数据，请重新生成确认卡。");
+    }
+    const projectId = payload?.projectId ?? args.bookId;
+    if (!projectId) throw new ApiError(400, "INVALID_ID", "interactive-film action requires a project id (bookId)");
+    tool = createConnectChoiceTool(args.root, projectId);
+    params = {
+      node: payload.node,
+    };
+  } else if (args.requestedIntent === "remove_node") {
+    const payload = actionPayload?.removeNode;
+    if (!payload?.nodeId) {
+      throw new ApiError(400, "CONFIRMED_ACTION_PAYLOAD_INCOMPLETE", "确认删除节点缺少 nodeId，请重新生成确认卡。");
+    }
+    const projectId = payload?.projectId ?? args.bookId;
+    if (!projectId) throw new ApiError(400, "INVALID_ID", "interactive-film action requires a project id (bookId)");
+    tool = createRemoveNodeTool(args.root, projectId);
+    params = {
+      nodeId: payload.nodeId,
     };
   } else {
     throw new ApiError(400, "UNSUPPORTED_CONFIRMED_ACTION", `Unsupported confirmed action: ${args.requestedIntent}`);
@@ -1797,7 +1846,7 @@ async function probeServiceCapabilities(args: {
 
 // --- Server factory ---
 
-export function createStudioServer(initialConfig: ProjectConfig, root: string) {
+export function createStudioServer(initialConfig: ProjectConfig, root: string, overrides: { readonly nodeImageGenerator?: NodeImageDeps } = {}) {
   const app = new Hono();
   const state = new StateManager(root);
   let cachedConfig = initialConfig;
@@ -3448,7 +3497,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
         bookSession = updatedSession;
       }
       let activeBookConfig: { readonly language?: string } | null = null;
-      if (agentBookId) {
+      if (agentBookId && sessionKind !== "interactive-film-authoring") {
         try {
           activeBookConfig = await state.loadBookConfig(agentBookId);
         } catch {
@@ -3635,6 +3684,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
             pipeline,
             root,
             sessionId: bookSession.sessionId,
+            bookId: agentBookId,
             streamSessionId,
             instruction,
             requestedIntent,
@@ -4014,6 +4064,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
               sessionKind,
               ...(bookSession.bookId ? { activeBookId: bookSession.bookId } : {}),
             },
+            details: { toolExecutions: collectedToolExecs },
           });
         }
 
@@ -5033,6 +5084,62 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string) {
     } catch { /* slow/unreachable upstream — leave llmConnected false */ }
 
     return c.json(checks);
+  });
+
+  app.post("/api/v1/projects/:id/story-graph/delta", async (c) => {
+    const id = c.req.param("id");
+    if (!isSafeBookId(id)) {
+      return c.json({ error: { code: "INVALID_ID", message: `invalid project id: ${id}` } }, 400);
+    }
+    const { delta } = await c.req.json<{ delta: unknown }>();
+    const { graph, rev } = await applyGraphDelta({ projectRoot: root, projectId: id, delta: delta as never });
+    return c.json({ rev, graph });
+  });
+
+  app.get("/api/v1/projects/:id/story-graph", async (c) => {
+    const id = c.req.param("id");
+    if (!isSafeBookId(id)) {
+      return c.json({ error: { code: "INVALID_ID", message: `invalid project id: ${id}` } }, 400);
+    }
+    const graphPath = join(root, "interactive-films", id, "story-graph.json");
+    try {
+      const raw = await readFile(graphPath, "utf-8");
+      return c.json(JSON.parse(raw));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return c.json({ error: { code: "NOT_FOUND", message: `story graph not found for ${id}` } }, 404);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/story-graph/validation", async (c) => {
+    const id = c.req.param("id");
+    if (!isSafeBookId(id)) {
+      return c.json({ error: { code: "INVALID_ID", message: `invalid project id: ${id}` } }, 400);
+    }
+    const graph = await loadStoryGraph(root, id);
+    if (!graph) {
+      return c.json({ error: { code: "NOT_FOUND", message: `story graph not found for ${id}` } }, 404);
+    }
+    return c.json(reviewStoryGraph(graph));
+  });
+
+  app.post("/api/v1/projects/:id/nodes/:nodeId/image", async (c) => {
+    const id = c.req.param("id");
+    const nodeId = c.req.param("nodeId");
+    if (!isSafeBookId(id)) {
+      return c.json({ error: { code: "INVALID_ID", message: `invalid project id: ${id}` } }, 400);
+    }
+    const graph = await loadStoryGraph(root, id);
+    const node = graph?.nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      return c.json({ error: { code: "NODE_NOT_FOUND", message: `node ${nodeId} not found` } }, 404);
+    }
+    const deps = overrides.nodeImageGenerator ?? (await defaultNodeImageDeps(root));
+    const { assetRef, delta } = await generateNodeImage({ projectRoot: root, projectId: id, node, deps });
+    const { rev } = await applyGraphDelta({ projectRoot: root, projectId: id, delta });
+    return c.json({ assetRef, rev });
   });
 
   return app;
