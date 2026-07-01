@@ -35,6 +35,7 @@ import {
   createScriptCreationTool,
   createStoryboardCreationTool,
   createInteractiveFilmCreationTool,
+  createResearchWebTool,
 } from "./agent-tools.js";
 import { createFilmAuthoringTools, filmLLMDepsFromClient } from "./film-authoring-tools.js";
 import { createBookContextTransform } from "./context-transform.js";
@@ -679,6 +680,7 @@ function createAgentToolsForMode(params: {
   const proposalTool = createProposeActionTool(lang, {
     sameSession: params.sessionKind !== "chat",
   });
+  const researchTool = createResearchWebTool(params.projectRoot);
   const isConfirmed = (
     intent: NonNullable<AgentSessionConfig["requestedIntent"]>,
   ): boolean => {
@@ -687,7 +689,7 @@ function createAgentToolsForMode(params: {
   };
 
   if (params.sessionKind === "chat") {
-    return [proposalTool];
+    return [proposalTool, researchTool];
   }
 
   if (params.sessionKind === "short") {
@@ -759,7 +761,7 @@ function createAgentToolsForMode(params: {
         architectCreateOnly: true,
       })];
     }
-    return [proposalTool];
+    return [proposalTool, researchTool];
   }
 
   if (!params.bookId) {
@@ -774,12 +776,13 @@ function createAgentToolsForMode(params: {
     createRenameEntityTool(params.pipeline, params.projectRoot, params.bookId),
     createPatchChapterTextTool(params.pipeline, params.projectRoot, params.bookId),
     createReplaceChapterTextTool(params.pipeline, params.projectRoot, params.bookId),
+    researchTool,
     createGrepTool(params.projectRoot),
     createLsTool(params.projectRoot),
   ];
 
   if (params.sessionKind === "edit") {
-    return bookTools.filter((tool) => tool.name !== "sub_agent" && tool.name !== "generate_cover");
+    return bookTools.filter((tool) => !["sub_agent", "generate_cover", "research_web"].includes(tool.name));
   }
 
   return bookTools;

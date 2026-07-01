@@ -111,6 +111,19 @@ export type InputGovernanceMode = z.infer<typeof InputGovernanceModeSchema>;
 
 const ModelOverrideValueSchema = z.union([z.string(), AgentLLMOverrideSchema]);
 
+export const ResearchSearchConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  provider: z.enum(["tavily", "custom"]).default("tavily"),
+  baseUrl: z.string().url().optional(),
+  apiKey: z.string().optional(),
+  apiKeyEnv: z.string().optional(),
+}).default({
+  enabled: false,
+  provider: "tavily",
+});
+
+export type ResearchSearchConfig = z.infer<typeof ResearchSearchConfigSchema>;
+
 export const ProjectConfigSchema = z.object({
   name: z.string().min(1),
   version: z.literal("0.1.0"),
@@ -124,6 +137,7 @@ export const ProjectConfigSchema = z.object({
   writing: WritingConfigSchema.default({
     reviewRetries: 1,
   }),
+  researchSearch: ResearchSearchConfigSchema,
   modelOverrides: z.record(z.string(), ModelOverrideValueSchema).optional(),
   inputGovernanceMode: InputGovernanceModeSchema.default("v2"),
   daemon: z.object({

@@ -111,6 +111,19 @@ describe("StateManager", () => {
       });
     });
 
+    it("does not save an empty chapter index over existing chapter files", async () => {
+      const bookDir = manager.bookDir("protect-empty-index");
+      await mkdir(join(bookDir, "chapters"), { recursive: true });
+      await writeFile(join(bookDir, "chapters", "0001_雨棚.md"), "# 第1章 雨棚\n\n正文。", "utf-8");
+
+      await manager.saveChapterIndex("protect-empty-index", []);
+
+      const raw = await readFile(join(bookDir, "chapters", "index.json"), "utf-8");
+      const parsed = JSON.parse(raw) as Array<{ number: number; title: string }>;
+      expect(parsed.map((chapter) => chapter.number)).toEqual([1]);
+      expect(parsed[0]?.title).toBe("雨棚");
+    });
+
     it("creates the chapters directory on save", async () => {
       await manager.saveChapterIndex("book-b", []);
       const dirStat = await stat(

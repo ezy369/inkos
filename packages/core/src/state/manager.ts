@@ -281,7 +281,11 @@ export class StateManager {
   }
 
   private async rebuildChapterIndexFromFiles(bookId: string): Promise<ReadonlyArray<ChapterMeta>> {
-    const chaptersDir = join(this.bookDir(bookId), "chapters");
+    return this.rebuildChapterIndexFromFilesAt(this.bookDir(bookId));
+  }
+
+  private async rebuildChapterIndexFromFilesAt(bookDir: string): Promise<ReadonlyArray<ChapterMeta>> {
+    const chaptersDir = join(bookDir, "chapters");
     let files: string[];
     try {
       files = await readdir(chaptersDir);
@@ -321,19 +325,24 @@ export class StateManager {
   async saveChapterIndex(
     bookId: string,
     index: ReadonlyArray<ChapterMeta>,
+    options: { readonly allowEmptyWithChapterFiles?: boolean } = {},
   ): Promise<void> {
-    await this.saveChapterIndexAt(this.bookDir(bookId), index);
+    await this.saveChapterIndexAt(this.bookDir(bookId), index, options);
   }
 
   async saveChapterIndexAt(
     bookDir: string,
     index: ReadonlyArray<ChapterMeta>,
+    options: { readonly allowEmptyWithChapterFiles?: boolean } = {},
   ): Promise<void> {
     const chaptersDir = join(bookDir, "chapters");
     await mkdir(chaptersDir, { recursive: true });
+    const safeIndex = index.length === 0 && !options.allowEmptyWithChapterFiles
+      ? await this.rebuildChapterIndexFromFilesAt(bookDir).then((rebuilt) => rebuilt.length > 0 ? rebuilt : index)
+      : index;
     await writeFile(
       join(chaptersDir, "index.json"),
-      JSON.stringify(index, null, 2),
+      JSON.stringify(safeIndex, null, 2),
       "utf-8",
     );
   }

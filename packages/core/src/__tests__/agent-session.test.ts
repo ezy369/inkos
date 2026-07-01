@@ -549,7 +549,7 @@ describe("runAgentSession cache — bookId switch", () => {
     }
   });
 
-  it("exposes only confirmation proposals in general chat", async () => {
+  it("exposes only confirmation proposals and research in general chat", async () => {
     const model = { provider: "x", id: "y", api: "anthropic-messages" } as any;
     const pipeline = {} as any;
 
@@ -560,6 +560,7 @@ describe("runAgentSession cache — bookId switch", () => {
 
     expect(agentInstances[0].state.tools.map((tool: any) => tool.name)).toEqual([
       "propose_action",
+      "research_web",
     ]);
   });
 
@@ -574,6 +575,7 @@ describe("runAgentSession cache — bookId switch", () => {
 
     expect(agentInstances[0].state.tools.map((tool: any) => tool.name)).toEqual([
       "propose_action",
+      "research_web",
     ]);
   });
 
@@ -857,6 +859,7 @@ describe("runAgentSession cache — bookId switch", () => {
       "rename_entity",
       "patch_chapter_text",
       "replace_chapter_text",
+      "research_web",
       "grep",
       "ls",
     ]);

@@ -90,6 +90,8 @@ describe("chat message actions", () => {
     const store = createTestStore();
     const sessionId = store.getState().createDraftSession("harbor-book", "book");
     store.getState().setSelectedModel("deepseek-v4-flash", "kkaiapi");
+    store.getState().setSelectedModel("MiniMax-M2.7", "minimax");
+    store.getState().setSelectedModel("deepseek-v4-flash", "kkaiapi");
     fetchJson
       .mockResolvedValueOnce({ session: { sessionId, bookId: "harbor-book", sessionKind: "book" } })
       .mockResolvedValueOnce({
@@ -104,6 +106,8 @@ describe("chat message actions", () => {
     const body = JSON.parse((agentCall?.[1] as { body: string }).body);
     expect(body.activeBookId).toBe("harbor-book");
     expect(body.sessionKind).toBe("book");
+    expect(body.service).toBe("kkaiapi");
+    expect(body.model).toBe("deepseek-v4-flash");
   });
 
   it("parses @skill directives into requestedSkills and strips them from the agent instruction", async () => {

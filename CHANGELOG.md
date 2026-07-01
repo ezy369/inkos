@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.6.0
+
+### Release Focus
+
+互动影游与 Skill 系统大版本：把 InkOS 的创作入口从“小说 + Play”继续扩展到互动影游、剧本、分镜和可插拔专业能力。Studio Chat 现在可以按用户意图调用外部 / 内置 skills，也能在需要真实资料时生成可追溯研究报告，同时修复几类影响长任务继续推进和用户协作编辑的稳定性问题。
+
+### Major Features
+
+- 新增互动影游创作与工作台能力：支持分支剧情、变量 / 旗标、角色关系、结局、节点图片和可导出的交互项目包
+- 新增 runtime Skill 系统：内置 / 外部 skill 可被自动匹配或用户强制指定，用于给 Chat / 创作入口注入专业规则、提示词包和上下文需求
+- 新增联网研究工具 `research_web`：可用于世界观、年代、职业、地域、市场和事实核查，输出带 sources / queryLog / unknowns / confidence 的 Markdown 参考报告
+- Studio Skill UI 支持选择、强制使用和添加外部 skill，让专业能力不再只能写死在系统提示词里
+- 剧本、分镜、互动影游入口与 Chat action surface 对齐，重动作继续走确认卡，生成结果可在 Studio 内查看和导出
+
+### Reliability And Fixes
+
+- 修复 `patch_chapter_text` 只能精确命中文本的问题；现在轻微改写的目标段落可用高置信段落定位兜底，仍无法确认时继续明确失败，避免误改
+- 修复审计 / 多章操作失败时可能把 `chapters/index.json` 写成空数组的问题；保存层会从磁盘章节文件重建索引，防止已有章节在 UI 中消失
+- 修复多渠道同模型切换后会话丢失 bookId 的回归风险，并补充测试锁定 session-bound bookId 传递
+- 研究报告保存为 `.inkos/research/` 下的参考材料，不直接污染 story truth、角色卡或正文
+
 ## v1.5.0
 
 ### Release Focus

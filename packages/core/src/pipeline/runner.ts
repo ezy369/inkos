@@ -2677,7 +2677,7 @@ ${matrix}`,
           resolvedLanguage,
         );
         await this.resetImportReplayTruthFiles(bookDir, resolvedLanguage);
-        await this.state.saveChapterIndex(input.bookId, []);
+        await this.state.saveChapterIndex(input.bookId, [], { allowEmptyWithChapterFiles: true });
         await this.state.snapshotState(input.bookId, 0);
 
         // Generate style guide from imported chapters

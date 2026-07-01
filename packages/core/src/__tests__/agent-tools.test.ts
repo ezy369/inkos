@@ -47,7 +47,11 @@ describe("agent deterministic writing tools", () => {
     await mkdir(join(state.bookDir("harbor"), "story", "runtime"), { recursive: true });
     await mkdir(join(state.bookDir("harbor"), "chapters"), { recursive: true });
     await writeFile(join(state.bookDir("harbor"), "story", "story_bible.md"), "# Story Bible\n\nLin Yue guards the jade seal.\n", "utf-8");
-    await writeFile(join(state.bookDir("harbor"), "chapters", "0003_Storm.md"), "# 第3章 风暴\n\nLin Yue kept the jade seal hidden.\n", "utf-8");
+    await writeFile(
+      join(state.bookDir("harbor"), "chapters", "0003_Storm.md"),
+      "# 第3章 风暴\n\nLin Yue kept the jade seal hidden under wet burlap, and she did not tell the guild.\n",
+      "utf-8",
+    );
     await state.saveChapterIndex("harbor", [{
       number: 3,
       title: "风暴",
@@ -124,6 +128,20 @@ describe("agent deterministic writing tools", () => {
         ]),
       }),
     ]);
+  });
+
+  it("patches a high-confidence paragraph match when the model paraphrases the target text", async () => {
+    const tool = createPatchChapterTextTool({} as never, root, "harbor");
+
+    await tool.execute("tool-4-fuzzy", {
+      chapterNumber: 3,
+      targetText: "Lin Yue kept the jade seal under wet burlap and told no one from the guild.",
+      replacementText: "Lin Yue locked the jade seal beneath the altar and let the guild keep guessing.",
+    });
+
+    const updated = await readFile(join(state.bookDir("harbor"), "chapters", "0003_Storm.md"), "utf-8");
+    expect(updated).toContain("beneath the altar");
+    expect(updated).not.toContain("wet burlap");
   });
 
   it("replaces whole chapter text through the deterministic edit controller", async () => {

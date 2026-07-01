@@ -40,6 +40,7 @@ import {
   evaluateBookQuality,
   ConsolidatorAgent,
   DetectionConfigSchema,
+  ResearchSearchConfigSchema,
   InputGovernanceModeSchema,
   GLOBAL_ENV_PATH,
   COVER_PROVIDER_PRESETS,
@@ -4654,6 +4655,22 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       service: typeof llm.service === "string" ? llm.service : null,
       defaultModel,
     });
+  });
+
+  // --- Research search provider ---
+
+  app.get("/api/v1/project/research-search", async (c) => {
+    const raw = await loadRawConfig(root);
+    return c.json({ researchSearch: ResearchSearchConfigSchema.parse(raw.researchSearch ?? {}) });
+  });
+
+  app.put("/api/v1/project/research-search", async (c) => {
+    const body = await c.req.json<{ researchSearch?: unknown }>();
+    const researchSearch = ResearchSearchConfigSchema.parse(body.researchSearch ?? {});
+    const raw = await loadRawConfig(root);
+    raw.researchSearch = researchSearch;
+    await saveRawConfig(root, raw);
+    return c.json({ ok: true, researchSearch });
   });
 
   // --- Chapter review mode (C4a: auto pipeline vs manual checkpoint) ---
